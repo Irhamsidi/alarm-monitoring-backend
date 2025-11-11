@@ -1,0 +1,9 @@
+# Jangan salin node_modules lokal ke dalam image
+node_modules
+# File log
+npm-debug.log*
+*.log
+# Git dan VS Code
+.git
+.gitignore
+.vscode
