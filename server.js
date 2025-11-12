@@ -2,10 +2,9 @@ const express = require("express");
 const bodyParser = require("body-parser");
 const WebSocket = require("ws");
 
-// --- STATE MANAGEMENT ---
+// State Management
 const firingAlerts = new Set();
 let alarmState = "idle"; // 'idle' | 'playing' | 'acknowledged'
-// ------------------------
 
 //HTTP Server
 const app = express();
@@ -16,12 +15,17 @@ const HTTP_PORT = 5001;
 const wss = new WebSocket.Server({ port: 5002 });
 
 wss.on("connection", (ws) => {
-  console.log("Client connected!");
+  console.log(`Client connected! Total clients: ${wss.clients.size}`);
+
+  // Send current state to new connected client
   if (alarmState === "playing") {
     ws.send("play-alarm");
   }
 
   ws.on("message", (message) => {
+    const msg = message.toString();
+    console.log(`Message from client: ${msg}`);
+
     if (message.toString() === "ack-alarm") {
       console.log("--- ALARM ACKNOWLEDGED BY CLIENT ---");
 
@@ -32,11 +36,29 @@ wss.on("connection", (ws) => {
       console.log(
         `Current state: ${alarmState}, Firing alerts: ${firingAlerts.size}`
       );
+    } else if (msg === "reset-all") {
+      //Panic Button for Development Purpose
+      console.log("--- Manual Reset Triggered ---");
+      firingAlerts.clear();
+      alarmState = "idle";
+      broadcast("stop-alarm");
+      console.log("State and Alerts have been reset.");
     }
   });
 
   ws.on("close", () => {
-    console.log("Client disconnected!");
+    console.log(`Client disconnected! Total clients left: ${wss.clients.size}`);
+
+    //Reset state when last client disconnected
+    if (wss.clients.size === 0) {
+      console.log(
+        "--- All clients disconnected, resetting state to 'idle' ---"
+      );
+
+      if (alarmState === "playing" || alarmState === "acknowledged") {
+        alarmState = "idle";
+      }
+    }
   });
 });
 
@@ -60,7 +82,7 @@ app.post("/alert", (req, res) => {
     return res.send("OK (no alerts array)");
   }
 
-  // 1. Update list 'firingAlerts' kita
+  //Update'firingAlerts' lists
   if (status === "firing") {
     alerts.forEach((alert) => {
       const fp = alert.fingerprint;
@@ -86,10 +108,14 @@ app.post("/alert", (req, res) => {
   console.log(`Alarm audio state: ${alarmState}`);
   console.log(`---------------------`);
 
-  // 2. Tentukan status alarm BARU
+  //Define new status
   if (firingAlerts.size > 0) {
-    if (alarmState === "idle" || alarmState === "acknowledged") {
+    if (alarmState === "idle") {
       console.log("State changed: IDLE/ACK -> PLAYING");
+      alarmState = "playing";
+      broadcast("play-alarm");
+    } else if (alarmState === "acknowledged") {
+      console.log("State changed: ACK -> PLAYING (New/Re-Firing Alert)");
       alarmState = "playing";
       broadcast("play-alarm");
     } else {
