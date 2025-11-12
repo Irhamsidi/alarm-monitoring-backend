@@ -28,6 +28,13 @@ const wss = new WebSocket.Server({ port: 5002 });
 wss.on("connection", (ws) => {
   log(`Client connected! Total clients: ${wss.clients.size}`);
 
+  //Heartbeat
+  ws.isAlive = true;
+
+  ws.on("pong", () => {
+    ws.isAlive = true;
+  });
+
   // Send current state to new connected client
   if (alarmState === "playing") {
     ws.send("play-alarm");
@@ -68,6 +75,17 @@ wss.on("connection", (ws) => {
     }
   });
 });
+
+// Heartbeat Function
+setInterval(() => {
+  wss.clients.forEach((ws) => {
+    if (!ws.isAlive) {
+      return ws.terminate();
+    }
+    ws.isAlive = false;
+    ws.ping();
+  });
+}, 30000);
 
 // Message Broadcast to Connected Client
 function broadcast(data) {
