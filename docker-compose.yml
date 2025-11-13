@@ -5,7 +5,7 @@ services:
     image: alarm-monitoring-backend:latest
 
     container_name: alarm-ws-server
-    restart: unless-stoped
+    restart: unless-stopped
 
     ports:
       - "5001:5001" #Webhook Endpoint (HTTP)

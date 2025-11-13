@@ -86,14 +86,6 @@ wss.on("connection", (ws) => {
     log(
       `Client [${ws.id}] disconnected! Total clients left: ${wss.clients.size}`
     );
-
-    // Reset state when last client disconnected
-    if (wss.clients.size === 0) {
-      if (alarmState !== "idle") {
-        log("--- All clients disconnected, resetting state to 'idle' ---");
-        alarmState = "idle";
-      }
-    }
   });
 
   ws.on("error", (err) => {
