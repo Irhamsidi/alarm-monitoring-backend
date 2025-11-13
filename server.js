@@ -1,6 +1,7 @@
 const express = require("express");
 const bodyParser = require("body-parser");
 const WebSocket = require("ws");
+const crypto = require("crypto");
 
 // State Management
 const firingAlerts = new Set();
@@ -25,15 +26,34 @@ const HTTP_PORT = 5001;
 // WebSocker Server
 const wss = new WebSocket.Server({ port: 5002 });
 
-wss.on("connection", (ws) => {
-  log(`Client connected! Total clients: ${wss.clients.size}`);
+// Heartbeat Function
+function heartbeat() {
+  this.isAlive = true;
+}
 
-  //Heartbeat
-  ws.isAlive = true;
+const interval = setInterval(function ping() {
+  wss.clients.forEach(function each(ws) {
+    if (ws.isAlive === false) {
+      log(
+        `Heartbeat: Client [${ws.id}] failed to pong. Terminating connection`
+      );
+      return ws.terminate();
+    }
 
-  ws.on("pong", () => {
-    ws.isAlive = true;
+    ws.isAlive = false;
+    ws.ping();
   });
+}, 30000);
+
+wss.on("connection", (ws) => {
+  // Unique ID for Client
+  ws.id = crypto.randomUUID().split("-")[0];
+
+  // Heartbeat Client Setup
+  ws.isAlive = true;
+  ws.on("pong", heartbeat);
+
+  log(`Client [${ws.id}] connected! Total clients: ${wss.clients.size}`);
 
   // Send current state to new connected client
   if (alarmState === "playing") {
@@ -42,9 +62,9 @@ wss.on("connection", (ws) => {
 
   ws.on("message", (message) => {
     const msg = message.toString();
-    log(`Message from client: ${msg}`);
+    log(`Message from client [${ws.id}]: ${msg}`);
 
-    if (message.toString() === "ack-alarm") {
+    if (msg === "ack-alarm") {
       log("--- ALARM ACKNOWLEDGED BY CLIENT ---");
 
       if (alarmState === "playing") {
@@ -63,29 +83,28 @@ wss.on("connection", (ws) => {
   });
 
   ws.on("close", () => {
-    log(`Client disconnected! Total clients left: ${wss.clients.size}`);
+    log(
+      `Client [${ws.id}] disconnected! Total clients left: ${wss.clients.size}`
+    );
 
     // Reset state when last client disconnected
     if (wss.clients.size === 0) {
-      log("--- All clients disconnected, resetting state to 'idle' ---");
-
-      if (alarmState === "playing" || alarmState === "acknowledged") {
+      if (alarmState !== "idle") {
+        log("--- All clients disconnected, resetting state to 'idle' ---");
         alarmState = "idle";
       }
     }
   });
+
+  ws.on("error", (err) => {
+    logWarn(`Error on client [${ws.id}]: ${err.message}`);
+  });
 });
 
-// Heartbeat Function
-setInterval(() => {
-  wss.clients.forEach((ws) => {
-    if (!ws.isAlive) {
-      return ws.terminate();
-    }
-    ws.isAlive = false;
-    ws.ping();
-  });
-}, 30000);
+// Stop Ping Interval when Server is not up
+wss.on("close", function close() {
+  clearInterval(interval);
+});
 
 // Message Broadcast to Connected Client
 function broadcast(data) {
@@ -97,14 +116,14 @@ function broadcast(data) {
   });
 }
 
-// --- LOGIKA WEBHOOK BARU (STATEFUL) ---
+// --- Webhook Logic ---
 app.post("/alert", (req, res) => {
   const { status, alerts } = req.body;
   log(`\n--- WEBHOOK RECEIVED [${status}] ---`);
 
-  if (!alerts) {
-    logWarn("No 'alerts' array found in webhook body.");
-    return res.send("OK (no alerts array)");
+  if (!alerts || !Array.isArray(alerts)) {
+    logWarn("Invalid payload: No 'alerts' array found.");
+    return res.status(400).send("Missing 'alerts' array");
   }
 
   // Update'firingAlerts' lists
@@ -129,8 +148,8 @@ app.post("/alert", (req, res) => {
 
   log(`--- CURRENT STATE ---`);
   log(`Total firing alerts: ${firingAlerts.size}`);
-  log(`Current Set contents:`, Array.from(firingAlerts)); // DEBUG LOG
-  log(`Alarm audio state: ${alarmState}`);
+  log(`Active Fingerprints:`, Array.from(firingAlerts)); // DEBUG LOG
+  log(`Audio State: ${alarmState}`);
   log(`---------------------`);
 
   // Define new status
@@ -147,7 +166,7 @@ app.post("/alert", (req, res) => {
       log("State remains: PLAYING");
     }
   } else if (firingAlerts.size === 0) {
-    if (alarmState === "playing" || alarmState === "acknowledged") {
+    if (alarmState !== "idle") {
       log("State changed: PLAYING/ACK -> IDLE");
       alarmState = "idle";
       broadcast("stop-alarm");
@@ -162,4 +181,5 @@ app.post("/alert", (req, res) => {
 app.listen(HTTP_PORT, () => {
   log(`Webhook Server running on port ${HTTP_PORT}`);
   log(`WebSocket Server running on port 5002`);
+  log(`Server Ready. Waiting for Grafana alerts...`);
 });

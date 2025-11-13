@@ -4,8 +4,6 @@ services:
   backend:
     image: alarm-monitoring-backend:latest
 
-    pull_policy: never
-
     container_name: alarm-ws-server
     restart: unless-stoped
 
@@ -15,3 +13,4 @@ services:
 
     environment:
       - NODE_ENV=production
+      - TZ=Asia/Jakarta
