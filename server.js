@@ -129,65 +129,70 @@ function broadcast(data) {
 
 // --- Webhook Logic ---
 app.post("/alert", (req, res) => {
-  const { status, alerts } = req.body;
-  log(`\n--- WEBHOOK RECEIVED [${status}] ---`);
+  try {
+    const { status, alerts } = req.body;
+    log(`\n--- WEBHOOK RECEIVED [${status}] ---`);
 
-  if (!alerts || !Array.isArray(alerts)) {
-    logWarn("Invalid payload: No 'alerts' array found.");
-    return res.status(400).send("Missing 'alerts' array");
-  }
+    if (!alerts || !Array.isArray(alerts)) {
+      logWarn("Invalid payload: No 'alerts' array found.");
+      return res.status(400).send("Missing 'alerts' array");
+    }
 
-  // Update'firingAlerts' lists
-  if (status === "firing") {
-    alerts.forEach((alert) => {
-      const fp = alert.fingerprint;
-      log(`  + Adding fingerprint: [${fp}]`); // DEBUG LOG
-      firingAlerts.add(fp);
-    });
-  } else if (status === "resolved") {
-    alerts.forEach((alert) => {
-      const fp = alert.fingerprint;
-      log(`  - Attempting to delete fingerprint: [${fp}]`); // DEBUG LOG
-      if (firingAlerts.has(fp)) {
-        firingAlerts.delete(fp);
-        log(`    ...Success!`);
+    // Update'firingAlerts' lists
+    if (status === "firing") {
+      alerts.forEach((alert) => {
+        const fp = alert.fingerprint;
+        log(`  + Adding fingerprint: [${fp}]`); // DEBUG LOG
+        firingAlerts.add(fp);
+      });
+    } else if (status === "resolved") {
+      alerts.forEach((alert) => {
+        const fp = alert.fingerprint;
+        log(`  - Attempting to delete fingerprint: [${fp}]`); // DEBUG LOG
+        if (firingAlerts.has(fp)) {
+          firingAlerts.delete(fp);
+          log(`    ...Success!`);
+        } else {
+          log(`    ...FAILED! Fingerprint [${fp}] not found in Set.`); // DEBUG LOG
+        }
+      });
+    }
+
+    log(`--- CURRENT STATE ---`);
+    log(`Total firing alerts: ${firingAlerts.size}`);
+    log(`Active Fingerprints:`, Array.from(firingAlerts)); // DEBUG LOG
+    log(`Audio State: ${alarmState}`);
+    log(`---------------------`);
+
+    // Define new status
+    if (firingAlerts.size > 0) {
+      if (alarmState === "idle") {
+        log("State changed: IDLE/ACK -> PLAYING");
+        alarmState = "playing";
+        broadcast("play-alarm");
+      } else if (alarmState === "acknowledged") {
+        log("State changed: ACK -> PLAYING (New/Re-Firing Alert)");
+        alarmState = "playing";
+        broadcast("play-alarm");
       } else {
-        log(`    ...FAILED! Fingerprint [${fp}] not found in Set.`); // DEBUG LOG
+        log("State remains: PLAYING. Re-broadcasting to sync all clients.");
+        broadcast("play-alarm");
       }
-    });
-  }
-
-  log(`--- CURRENT STATE ---`);
-  log(`Total firing alerts: ${firingAlerts.size}`);
-  log(`Active Fingerprints:`, Array.from(firingAlerts)); // DEBUG LOG
-  log(`Audio State: ${alarmState}`);
-  log(`---------------------`);
-
-  // Define new status
-  if (firingAlerts.size > 0) {
-    if (alarmState === "idle") {
-      log("State changed: IDLE/ACK -> PLAYING");
-      alarmState = "playing";
-      broadcast("play-alarm");
-    } else if (alarmState === "acknowledged") {
-      log("State changed: ACK -> PLAYING (New/Re-Firing Alert)");
-      alarmState = "playing";
-      broadcast("play-alarm");
-    } else {
-      log("State remains: PLAYING. Re-broadcasting to sync all clients.");
-      broadcast("play-alarm");
+    } else if (firingAlerts.size === 0) {
+      if (alarmState !== "idle") {
+        log("State changed: PLAYING/ACK -> IDLE");
+        alarmState = "idle";
+        broadcast("stop-alarm");
+      } else {
+        log("State remains: IDLE");
+      }
     }
-  } else if (firingAlerts.size === 0) {
-    if (alarmState !== "idle") {
-      log("State changed: PLAYING/ACK -> IDLE");
-      alarmState = "idle";
-      broadcast("stop-alarm");
-    } else {
-      log("State remains: IDLE");
-    }
-  }
 
-  res.send("OK");
+    res.send("OK");
+  } catch (err) {
+    logWarn("!! Unhandeld Error in Webhook Logic !!!", err.message, err.stack);
+    res.status(500).send("Internal Server Error");
+  }
 });
 
 app.listen(HTTP_PORT, () => {
