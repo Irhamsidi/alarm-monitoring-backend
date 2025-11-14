@@ -33,15 +33,19 @@ function heartbeat() {
 
 const interval = setInterval(function ping() {
   wss.clients.forEach(function each(ws) {
-    if (ws.isAlive === false) {
-      log(
-        `Heartbeat: Client [${ws.id}] failed to pong. Terminating connection`
-      );
-      return ws.terminate();
-    }
+    try {
+      if (ws.isAlive === false) {
+        log(
+          `Heartbeat: Client [${ws.id}] failed to pong. Terminating connection...`
+        );
+        return ws.terminate();
+      }
 
-    ws.isAlive = false;
-    ws.ping();
+      ws.isAlive = false;
+      ws.ping();
+    } catch (err) {
+      logWarn(`Heartbeat: Error pinging client ${ws.id}: ${err.message}`);
+    }
   });
 }, 30000);
 
@@ -57,7 +61,16 @@ wss.on("connection", (ws) => {
 
   // Send current state to new connected client
   if (alarmState === "playing") {
-    ws.send("play-alarm");
+    try {
+      log(
+        `Client [${ws.id}] connecting while alarm is PLAYING. Sending play command`
+      );
+      ws.send("play-alarm");
+    } catch (err) {
+      logWarn(
+        `onConnection: Error sending play-alarm to client [${ws.id}]: ${err.message}`
+      );
+    }
   }
 
   ws.on("message", (message) => {
@@ -103,7 +116,13 @@ function broadcast(data) {
   log(`Broadcasting message: ${data}`);
   wss.clients.forEach((client) => {
     if (client.readyState === WebSocket.OPEN) {
-      client.send(data);
+      try {
+        client.send(data);
+      } catch (err) {
+        logWarn(
+          `Broadcast: Error sending to client [${client.id}]: ${err.message}`
+        );
+      }
     }
   });
 }
@@ -155,7 +174,8 @@ app.post("/alert", (req, res) => {
       alarmState = "playing";
       broadcast("play-alarm");
     } else {
-      log("State remains: PLAYING");
+      log("State remains: PLAYING. Re-broadcasting to sync all clients.");
+      broadcast("play-alarm");
     }
   } else if (firingAlerts.size === 0) {
     if (alarmState !== "idle") {
