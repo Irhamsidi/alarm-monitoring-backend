@@ -74,24 +74,35 @@ wss.on("connection", (ws) => {
   }
 
   ws.on("message", (message) => {
-    const msg = message.toString();
-    log(`Message from client [${ws.id}]: ${msg}`);
+    try {
+      const msg = message.toString();
+      log(`Message from client [${ws.id}]: ${msg}`);
 
-    if (msg === "ack-alarm") {
-      log("--- ALARM ACKNOWLEDGED BY CLIENT ---");
+      if (msg === "ack-alarm") {
+        log("--- ALARM ACKNOWLEDGED BY CLIENT ---");
 
-      if (alarmState === "playing") {
-        alarmState = "acknowledged";
+        if (alarmState === "playing") {
+          alarmState = "acknowledged";
+          broadcast("stop-alarm");
+        }
+        log(
+          `Current state: ${alarmState}, Firing alerts: ${firingAlerts.size}`
+        );
+      } else if (msg === "reset-all") {
+        // Panic Button for Development Purpose
+        log("--- Manual Reset Triggered ---");
+        firingAlerts.clear();
+        alarmState = "idle";
         broadcast("stop-alarm");
+        log("State and Alerts have been reset.");
       }
-      log(`Current state: ${alarmState}, Firing alerts: ${firingAlerts.size}`);
-    } else if (msg === "reset-all") {
-      // Panic Button for Development Purpose
-      log("--- Manual Reset Triggered ---");
-      firingAlerts.clear();
-      alarmState = "idle";
-      broadcast("stop-alarm");
-      log("State and Alerts have been reset.");
+    } catch (err) {
+      logWarn(
+        `!!! Unhandled Error in 'ws.on("message")' !!!`,
+        err.message,
+        `Client [${ws.id}] sent: `,
+        message
+      );
     }
   });
 
