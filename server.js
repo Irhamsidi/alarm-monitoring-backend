@@ -61,16 +61,16 @@ wss.on("connection", (ws) => {
 
   // Send current state to new connected client
   if (alarmState === "playing") {
-    try {
-      log(
-        `Client [${ws.id}] connecting while alarm is PLAYING. Sending play command`
-      );
-      ws.send("play-alarm");
-    } catch (err) {
-      logWarn(
-        `onConnection: Error sending play-alarm to client [${ws.id}]: ${err.message}`
-      );
-    }
+    log(
+      `Client [${ws.id}] connecting while alarm is PLAYING. Sending play command`
+    );
+    ws.send("play-alarm", (err) => {
+      if (err) {
+        logWarn(
+          `onConnection: Error sending play-alarm to client [${ws.id}]: ${err.message}`
+        );
+      }
+    });
   }
 
   ws.on("message", (message) => {
@@ -127,13 +127,13 @@ function broadcast(data) {
   log(`Broadcasting message: ${data}`);
   wss.clients.forEach((client) => {
     if (client.readyState === WebSocket.OPEN) {
-      try {
-        client.send(data);
-      } catch (err) {
-        logWarn(
-          `Broadcast: Error sending to client [${client.id}]: ${err.message}`
-        );
-      }
+      client.send(data, (err) => {
+        if (err) {
+          logWarn(
+            `Broadcast: Error sending to client [${client.id}]: ${err.message}`
+          );
+        }
+      });
     }
   });
 }
