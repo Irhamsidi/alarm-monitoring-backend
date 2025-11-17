@@ -1,10 +1,9 @@
-FROM node:lts-alpine
+FROM node:18-alpine
 
-WORKDIR /usr/src/app
+WORKDIR /app
 
 COPY package*.json ./
-RUN npm install
-RUN npm install pm2 -g
+RUN npm install -g pm2 && npm install --production
 
 COPY . .
 
