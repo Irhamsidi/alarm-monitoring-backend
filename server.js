@@ -34,10 +34,16 @@ function heartbeat() {
 const interval = setInterval(function ping() {
   wss.clients.forEach(function each(ws) {
     try {
-      if (ws.isAlive === false) {
-        log(
-          `Heartbeat: Client [${ws.id}] failed to pong. Terminating connection...`
-        );
+      if (ws.isAlive === false || ws.readyState !== WebSocket.OPEN) {
+        if (ws.isAlive === false) {
+          log(
+            `Heartbeat: Client [${ws.id}] failed to pong. Terminating connection...`
+          );
+        } else {
+          log(
+            `Heartbeat: Client [${ws.id}] is ALIVE but NOT OPEN (State: ${ws.readyState}). Terminating 'zombie' connection...`
+          );
+        }
         return ws.terminate();
       }
 
@@ -64,13 +70,20 @@ wss.on("connection", (ws) => {
     log(
       `Client [${ws.id}] connecting while alarm is PLAYING. Sending play command`
     );
-    ws.send("play-alarm", (err) => {
-      if (err) {
-        logWarn(
-          `onConnection: Error sending play-alarm to client [${ws.id}]: ${err.message}`
-        );
-      }
-    });
+
+    if (ws.readyState === WebSocket.OPEN) {
+      ws.send("play-alarm", (err) => {
+        if (err) {
+          logWarn(
+            `onConnection: Error sending play-alarm to client [${ws.id}]: ${err.message}`
+          );
+        }
+      });
+    } else {
+      logWarn(
+        `onConnection: Client [${ws.id}] is NOT OPEN (State: ${ws.readyState}). Skipping send.`
+      );
+    }
   }
 
   ws.on("message", (message) => {
