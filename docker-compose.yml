@@ -11,6 +11,8 @@ services:
       - "5001:5001" #Webhook Endpoint (HTTP)
       - "5002:5002" #WebSocket Connection
 
+    volumes: -/app/alarm-monitoring/logs:alarm-ws-server/logs
+
     environment:
       - NODE_ENV=production
       - TZ=Asia/Jakarta

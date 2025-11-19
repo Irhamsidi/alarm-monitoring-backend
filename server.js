@@ -3,20 +3,12 @@ const bodyParser = require("body-parser");
 const WebSocket = require("ws");
 const crypto = require("crypto");
 
+// logger.infoger
+const logger = require("./logger");
+
 // State Management
 const firingAlerts = new Set();
 let alarmState = "idle"; // 'idle' | 'playing' | 'acknowledged'
-
-// Logger Helper
-const log = (...args) => {
-  const timestamp = new Date().toLocaleString("sv");
-  console.log(`[${timestamp}]`, ...args);
-};
-
-const logWarn = (...args) => {
-  const timestamp = new Date().toLocaleString("sv");
-  console.warn(`[${timestamp}] WARN: `, ...args);
-};
 
 // HTTP Server
 const app = express();
@@ -36,11 +28,11 @@ const interval = setInterval(function ping() {
     try {
       if (ws.isAlive === false || ws.readyState !== WebSocket.OPEN) {
         if (ws.isAlive === false) {
-          log(
+          logger.info(
             `Heartbeat: Client [${ws.id}] failed to pong. Terminating connection...`
           );
         } else {
-          log(
+          logger.info(
             `Heartbeat: Client [${ws.id}] is ALIVE but NOT OPEN (State: ${ws.readyState}). Terminating 'zombie' connection...`
           );
         }
@@ -50,7 +42,7 @@ const interval = setInterval(function ping() {
       ws.isAlive = false;
       ws.ping();
     } catch (err) {
-      logWarn(`Heartbeat: Error pinging client ${ws.id}: ${err.message}`);
+      logger.warn(`Heartbeat: Error pinging client ${ws.id}: ${err.message}`);
     }
   });
 }, 30000);
@@ -63,24 +55,26 @@ wss.on("connection", (ws) => {
   ws.isAlive = true;
   ws.on("pong", heartbeat);
 
-  log(`Client [${ws.id}] connected! Total clients: ${wss.clients.size}`);
+  logger.info(
+    `Client [${ws.id}] connected! Total clients: ${wss.clients.size}`
+  );
 
   // Send current state to new connected client
   if (alarmState === "playing") {
-    log(
+    logger.info(
       `Client [${ws.id}] connecting while alarm is PLAYING. Sending play command`
     );
 
     if (ws.readyState === WebSocket.OPEN) {
       ws.send("play-alarm", (err) => {
         if (err) {
-          logWarn(
+          logger.warn(
             `onConnection: Error sending play-alarm to client [${ws.id}]: ${err.message}`
           );
         }
       });
     } else {
-      logWarn(
+      logger.warn(
         `onConnection: Client [${ws.id}] is NOT OPEN (State: ${ws.readyState}). Skipping send.`
       );
     }
@@ -89,44 +83,43 @@ wss.on("connection", (ws) => {
   ws.on("message", (message) => {
     try {
       const msg = message.toString();
-      log(`Message from client [${ws.id}]: ${msg}`);
+      logger.info(`Message from client [${ws.id}]: ${msg}`);
 
       if (msg === "ack-alarm") {
-        log("--- ALARM ACKNOWLEDGED BY CLIENT ---");
+        logger.info("--- ALARM ACKNOWLEDGED BY CLIENT ---");
 
         if (alarmState === "playing") {
           alarmState = "acknowledged";
           broadcast("stop-alarm");
         }
-        log(
+        logger.info(
           `Current state: ${alarmState}, Firing alerts: ${firingAlerts.size}`
         );
       } else if (msg === "reset-all") {
         // Panic Button for Development Purpose
-        log("--- Manual Reset Triggered ---");
+        logger.info("--- Manual Reset Triggered ---");
         firingAlerts.clear();
         alarmState = "idle";
         broadcast("stop-alarm");
-        log("State and Alerts have been reset.");
+        logger.info("State and Alerts have been reset.");
       }
     } catch (err) {
-      logWarn(
-        `!!! Unhandled Error in 'ws.on("message")' !!!`,
-        err.message,
-        `Client [${ws.id}] sent: `,
-        message
-      );
+      logger.error(`!!! Unhandled Error in 'ws.on("message")' !!!`, {
+        clientId: ws.id,
+        error: err,
+        rawMessage: message.toString(),
+      });
     }
   });
 
   ws.on("close", () => {
-    log(
+    logger.info(
       `Client [${ws.id}] disconnected! Total clients left: ${wss.clients.size}`
     );
   });
 
   ws.on("error", (err) => {
-    logWarn(`Error on client [${ws.id}]: ${err.message}`);
+    logger.warn(`Error on client [${ws.id}]: ${err.message}`);
   });
 });
 
@@ -137,12 +130,12 @@ wss.on("close", function close() {
 
 // Message Broadcast to Connected Client
 function broadcast(data) {
-  log(`Broadcasting message: ${data}`);
+  logger.info(`Broadcasting message: ${data}`);
   wss.clients.forEach((client) => {
     if (client.readyState === WebSocket.OPEN) {
       client.send(data, (err) => {
         if (err) {
-          logWarn(
+          logger.warn(
             `Broadcast: Error sending to client [${client.id}]: ${err.message}`
           );
         }
@@ -151,14 +144,23 @@ function broadcast(data) {
   });
 }
 
-// --- Webhook Logic ---
+// --- Webhook logger.infoic ---
 app.post("/alert", (req, res) => {
   try {
+    // Debugging for Receiving Raw Payload from Grafana
+    const payload = req.body;
+    logger.info("RAW PAYLOAD OBJECT (req.body):", payload);
+
     const { status, alerts } = req.body;
-    log(`\n--- WEBHOOK RECEIVED [${status}] ---`);
+    logger.info(`\n--- WEBHOOK RECEIVED [${status}] ---`);
+
+    if (status !== "firing" && status !== "resolved") {
+      logger.info(`  >> Status [${status}] ignored (No Firing/Resolved).`);
+      return res.send("Ignored Status");
+    }
 
     if (!alerts || !Array.isArray(alerts)) {
-      logWarn("Invalid payload: No 'alerts' array found.");
+      logger.warn("Invalid payload: No 'alerts' array found.");
       return res.status(400).send("Missing 'alerts' array");
     }
 
@@ -166,61 +168,66 @@ app.post("/alert", (req, res) => {
     if (status === "firing") {
       alerts.forEach((alert) => {
         const fp = alert.fingerprint;
-        log(`  + Adding fingerprint: [${fp}]`); // DEBUG LOG
+        logger.info(`  + Adding fingerprint: [${fp}]`); // DEBUG logger.info
         firingAlerts.add(fp);
       });
     } else if (status === "resolved") {
       alerts.forEach((alert) => {
         const fp = alert.fingerprint;
-        log(`  - Attempting to delete fingerprint: [${fp}]`); // DEBUG LOG
+        logger.info(`  - Attempting to delete fingerprint: [${fp}]`); // DEBUG logger.info
         if (firingAlerts.has(fp)) {
           firingAlerts.delete(fp);
-          log(`    ...Success!`);
+          logger.info(`    ...Success!`);
         } else {
-          log(`    ...FAILED! Fingerprint [${fp}] not found in Set.`); // DEBUG LOG
+          logger.info(`    ...FAILED! Fingerprint [${fp}] not found in Set.`); // DEBUG logger.info
         }
       });
     }
 
-    log(`--- CURRENT STATE ---`);
-    log(`Total firing alerts: ${firingAlerts.size}`);
-    log(`Active Fingerprints:`, Array.from(firingAlerts)); // DEBUG LOG
-    log(`Audio State: ${alarmState}`);
-    log(`---------------------`);
+    logger.info(`--- CURRENT STATE ---`);
+    logger.info(`Total firing alerts: ${firingAlerts.size}`);
+    logger.info(`Active Fingerprints:`, Array.from(firingAlerts)); // DEBUG logger.info
+    logger.info(`Audio State: ${alarmState}`);
+    logger.info(`---------------------`);
 
     // Define new status
     if (firingAlerts.size > 0) {
       if (alarmState === "idle") {
-        log("State changed: IDLE/ACK -> PLAYING");
+        logger.info("State changed: IDLE/ACK -> PLAYING");
         alarmState = "playing";
         broadcast("play-alarm");
       } else if (alarmState === "acknowledged") {
-        log("State changed: ACK -> PLAYING (New/Re-Firing Alert)");
+        logger.info("State changed: ACK -> PLAYING (New/Re-Firing Alert)");
         alarmState = "playing";
         broadcast("play-alarm");
       } else {
-        log("State remains: PLAYING. Re-broadcasting to sync all clients.");
+        logger.info(
+          "State remains: PLAYING. Re-broadcasting to sync all clients."
+        );
         broadcast("play-alarm");
       }
     } else if (firingAlerts.size === 0) {
       if (alarmState !== "idle") {
-        log("State changed: PLAYING/ACK -> IDLE");
+        logger.info("State changed: PLAYING/ACK -> IDLE");
         alarmState = "idle";
         broadcast("stop-alarm");
       } else {
-        log("State remains: IDLE");
+        logger.info("State remains: IDLE");
       }
     }
 
     res.send("OK");
   } catch (err) {
-    logWarn("!! Unhandeld Error in Webhook Logic !!!", err.message, err.stack);
+    logger.error(`!!! Unhandled Error in Webhook Logic !!!`, {
+      error: err,
+      receivedPayload: JSON.stringify(req.body),
+    });
     res.status(500).send("Internal Server Error");
   }
 });
 
 app.listen(HTTP_PORT, () => {
-  log(`Webhook Server running on port ${HTTP_PORT}`);
-  log(`WebSocket Server running on port 5002`);
-  log(`Server Ready. Waiting for Grafana alerts...`);
+  logger.info(`Webhook Server running on port ${HTTP_PORT}`);
+  logger.info(`WebSocket Server running on port 5002`);
+  logger.info(`Server Ready. Waiting for Grafana alerts...`);
 });

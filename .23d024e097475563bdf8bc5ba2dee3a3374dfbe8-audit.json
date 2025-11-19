@@ -1,0 +1,15 @@
+{
+    "keep": {
+        "days": true,
+        "amount": 7
+    },
+    "auditLog": ".23d024e097475563bdf8bc5ba2dee3a3374dfbe8-audit.json",
+    "files": [
+        {
+            "date": 1763532609731,
+            "name": "alarm-monitoring-2025-11-19.log",
+            "hash": "bee03f44e983005dfdd20f9cea7361cf7828ea6268fbf632887a9a998d0d27c4"
+        }
+    ],
+    "hashType": "sha256"
+}
