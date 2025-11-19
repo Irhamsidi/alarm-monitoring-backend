@@ -6,6 +6,8 @@ const crypto = require("crypto");
 // logger.infoger
 const logger = require("./logger");
 
+const IGNORED_ALERT_NAMES = ["DatasourceError", "NoData", "GrafanaHealthError"];
+
 // State Management
 const firingAlerts = new Set();
 let alarmState = "idle"; // 'idle' | 'playing' | 'acknowledged'
@@ -167,14 +169,32 @@ app.post("/alert", (req, res) => {
     // Update'firingAlerts' lists
     if (status === "firing") {
       alerts.forEach((alert) => {
+        const alertName = alert.labels?.alertname;
         const fp = alert.fingerprint;
-        logger.info(`  + Adding fingerprint: [${fp}]`); // DEBUG logger.info
+
+        if (IGNORED_ALERT_NAMES.includes(alertName)) {
+          logger.info(`  >> IGNORING ALERT: [${alertName}] (In Ignored List)`);
+          return;
+        }
+
+        logger.info(`  + Adding fingerprint: [${fp}] (${alertName})`);
         firingAlerts.add(fp);
       });
     } else if (status === "resolved") {
       alerts.forEach((alert) => {
+        const alertName = alert.labels?.alertname;
         const fp = alert.fingerprint;
-        logger.info(`  - Attempting to delete fingerprint: [${fp}]`); // DEBUG logger.info
+
+        if (IGNORED_ALERT_NAMES.includes(alertName)) {
+          logger.info(
+            `  >> IGNORING RESOLVED: [${alertName}] (In Ignored List)`
+          );
+          return;
+        }
+
+        logger.info(
+          `  - Attempting to delete fingerprint: [${fp}] (${alertName})`
+        ); // DEBUG logger.info
         if (firingAlerts.has(fp)) {
           firingAlerts.delete(fp);
           logger.info(`    ...Success!`);
@@ -230,4 +250,5 @@ app.listen(HTTP_PORT, () => {
   logger.info(`Webhook Server running on port ${HTTP_PORT}`);
   logger.info(`WebSocket Server running on port 5002`);
   logger.info(`Server Ready. Waiting for Grafana alerts...`);
+  logger.info(`Ignored Alerts List: ${JSON.stringify(IGNORED_ALERT_NAMES)}`);
 });
