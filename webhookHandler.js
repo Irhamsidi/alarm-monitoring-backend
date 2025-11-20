@@ -28,7 +28,7 @@ function handleAlert(req, res) {
     // Update State
     if (status === "firing") {
       alerts.forEach((alert) => {
-        const name = alert.label?.alertname;
+        const name = alert.labels?.alertname;
         const fp = alert.fingerprint;
 
         if (IGNORED_ALERT_NAMES.includes(name)) {
@@ -45,7 +45,7 @@ function handleAlert(req, res) {
       });
     } else if (status === "resolved") {
       alerts.forEach((alert) => {
-        const name = alert.label?.alertname;
+        const name = alert.labels?.alertname;
         const fp = alert.fingerprint;
 
         if (IGNORED_ALERT_NAMES.includes(name)) return;
