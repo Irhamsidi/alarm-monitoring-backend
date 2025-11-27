@@ -1,0 +1,29 @@
+name: Docker Image Alarm Monitoring Backend
+
+on:
+  push:
+    branches: [ "master" ]
+  pull_request:
+    branches: [ "master" ]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Build Docker image (no cache)
+        run: |
+          docker build --no-cache -t alarm-monitoring-backend:latest .
+
+      - name: Save Docker image to tar
+        run: |
+          docker save -o alarm-monitoring-backend.tar alarm-monitoring-backend:latest
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: alarm-monitoring-backend-image
+          path: alarm-monitoring-backend.tar
