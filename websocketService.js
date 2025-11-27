@@ -2,6 +2,7 @@ const WebSocket = require("ws");
 const crypto = require("crypto");
 const logger = require("./logger");
 const stateManager = require("./stateManager");
+const { type } = require("os");
 
 let wss;
 
@@ -31,11 +32,14 @@ function handleConnection(ws) {
   );
 
   // State Synchronizer
+  const currentAlerts = stateManager.getAlertsList();
   if (stateManager.getState() === "playing") {
     logger.info(
       `Client [${ws.id}] connecting during PLAYING state. Syncing....`
     );
-    sendToClient(ws, "play-alarm");
+    sendToClient(ws, { type: "play-alarm", alerts: currentAlerts });
+  } else if (stateManager.getState() === "acknowledged") {
+    sendToClient(ws, { type: "update-list", alerts: currentAlerts });
   }
 
   // Client Message Handler
@@ -89,13 +93,16 @@ function setupHeartbeat() {
 }
 
 // Broadcast Function
-function broadcast(data) {
+function broadcast(payload) {
   if (!wss) return;
-  logger.info(`Broadcasting: ${data}`);
+
+  // Convert Object to JSON String
+  const messageString = JSON.stringify(payload);
+  logger.info(`Broadcasting: ${payload.type}`);
 
   wss.clients.forEach((client) => {
     if (client.readyState == WebSocket.OPEN) {
-      client.send(data, (err) => {
+      client.send(messageString, (err) => {
         if (err)
           logger.warn(`Broadcast failed to [${client.id}]: ${err.message}`);
       });
@@ -104,9 +111,10 @@ function broadcast(data) {
 }
 
 // Single Client Helper
-function sendToClient(ws, data) {
+function sendToClient(ws, payload) {
   if (ws.readyState === WebSocket.OPEN) {
-    ws.send(data, (err) => {
+    const messageString = JSON.stringify(payload);
+    ws.send(messageString, (err) => {
       if (err) logger.warn(`Send failed to [${ws.id}]: ${err.message}`);
     });
   }
@@ -117,7 +125,7 @@ function handleAck(ws) {
   logger.info("--- ALARM ACKNOWLEDGED BY CLIENT ---");
   if (stateManager.getState() === "playing") {
     stateManager.setState("acknowledged");
-    broadcast("stop-alarm");
+    broadcast({ type: "stop-alarm" });
   }
   logger.info(
     `Current State: ${stateManager.getState()}, Active Alerts: ${stateManager.getAlertCount()}`
@@ -129,7 +137,7 @@ function handleReset() {
   logger.info("--- Manual Reset Triggered ---");
   stateManager.clearAlerts();
   stateManager.setState("idle");
-  broadcast("stop-alarm");
+  broadcast({ type: "stop-alarm" });
   logger.info("State Reset Complete.");
 }
 
