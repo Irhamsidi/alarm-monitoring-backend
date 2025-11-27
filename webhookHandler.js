@@ -28,8 +28,16 @@ function handleAlert(req, res) {
     // Update State
     if (status === "firing") {
       alerts.forEach((alert) => {
-        const name = alert.labels?.alertname;
+        const name = alert.labels?.alertname || "Unknown Alert";
         const fp = alert.fingerprint;
+
+        const service = alert.labels?.service || "General Service";
+
+        const summary =
+          alert.annotations?.summary ||
+          alert.annotations?.description ||
+          alert.annotations?.message ||
+          "Alert triggered (No details).";
 
         if (IGNORED_ALERT_NAMES.includes(name)) {
           logger.info(` >>>> IGNORING ALERT: [${name}]`);
@@ -40,8 +48,14 @@ function handleAlert(req, res) {
           isEffectiveChange = true;
         }
 
-        logger.info(` + Adding: [${fp}] (${name})`);
-        stateManager.addAlert(fp);
+        logger.info(` + Adding: [${fp}] ${name} - ${service}`);
+        stateManager.addAlert(fp, {
+          fingerprint: fp,
+          alertname: name,
+          service: service,
+          summary: summary,
+          startTime: new Date().toISOString(),
+        });
       });
     } else if (status === "resolved") {
       alerts.forEach((alert) => {
@@ -61,11 +75,7 @@ function handleAlert(req, res) {
     }
 
     // Current Status
-    logger.info(`--- CURRENT STATE ---`);
-    logger.info(`Count: ${stateManager.getAlertCount()}`);
-    logger.info(`State: ${stateManager.getState()}`);
-    logger.info(`Change: ${isEffectiveChange}`);
-    logger.info(`---------------------`);
+    const activeAlertsData = stateManager.getAlertsList();
 
     // Play/Stop Condition
     const currentCount = stateManager.getAlertCount();
@@ -75,24 +85,37 @@ function handleAlert(req, res) {
       if (currentState === "idle") {
         logger.info("Action: IDLE -> PLAYING");
         stateManager.setState("playing");
-        websocketService.broadcast("play-alarm");
+        websocketService.broadcast({
+          type: "play-alarm",
+          alerts: activeAlertsData,
+        });
       } else if (currentState === "acknowledged") {
         if (status === "firing" && isEffectiveChange) {
           logger.info("Action: ACK -> PLAYING (New Alert)");
           stateManager.setState("playing");
-          websocketService.broadcast("play-alarm");
+          websocketService.broadcast({
+            type: "play-alarm",
+            alerts: activeAlertsData,
+          });
         } else {
           logger.info("Action: Remain ACKNOWLEDGED");
+          websocketService.broadcast({
+            type: "update-list",
+            alerts: activeAlertsData,
+          });
         }
       } else {
         logger.info("Action: Remain PLAYING (Sync Broadcast");
-        websocketService.broadcast("play-alarm");
+        websocketService.broadcast({
+          type: "play-alarm",
+          alerts: activeAlertsData,
+        });
       }
     } else {
       if (currentState !== "idle") {
         logger.info("Action: PLAYING/ACK -> IDLE");
         stateManager.setState("idle");
-        websocketService.broadcast("stop-alarm");
+        websocketService.broadcast({ type: "stop-alarm" });
       } else {
         logger.info("Action: Remain IDLE");
       }

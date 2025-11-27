@@ -1,12 +1,12 @@
 class StateManager {
   constructor() {
-    this.firingAlerts = new Set();
+    this.firingAlerts = new Map();
     this.alarmState = "idle"; // idle | playing | acknowledged
   }
 
   // Firing Alerts Method
-  addAlert(fingerprint) {
-    this.firingAlerts.add(fingerprint);
+  addAlert(fingerprint, details) {
+    this.firingAlerts.set(fingerprint, details);
   }
 
   removeAlert(fingerprint) {
@@ -21,8 +21,8 @@ class StateManager {
     return this.firingAlerts.size;
   }
 
-  getAlertsArray() {
-    return Array.from(this.firingAlerts);
+  getAlertsList() {
+    return Array.from(this.firingAlerts.values());
   }
 
   clearAlerts() {
