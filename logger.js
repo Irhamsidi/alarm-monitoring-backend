@@ -3,11 +3,12 @@ const path = require("path");
 require("winston-daily-rotate-file");
 
 // Destructuring
-const { combine, timestamp, printf, splat, json } = format;
+const { combine, timestamp, printf, splat } = format;
 
 // Log Directory
 const BASE_LOG_DIR = "/home/backend/logs";
 
+// Format
 const customFormat = printf(({ level, message, timestamp, ...metadata }) => {
   let log = `[${timestamp}] [${level.toUpperCase()}]: ${message}`;
 
@@ -17,16 +18,23 @@ const customFormat = printf(({ level, message, timestamp, ...metadata }) => {
   return log;
 });
 
+const fileFormat = printf(({ timestamp, ...info }) => {
+  return `[Timestamp: ${timestamp}] ${JSON.stringify(info)}`;
+});
+
 // Daily Rotate File
-const dailyRotateFileTransport = new transports.DailyRotateFile({
+const dailyTransport = new transports.DailyRotateFile({
   filename: path.join(BASE_LOG_DIR, "alarm-monitoring-%DATE%.log"),
+
   datePattern: "YYYY-MM-DD",
-  zippedArchive: true,
+  zippedArchive: false,
+
+  // File Retention
+  maxFiles: "60d",
   maxSize: "200m",
-  maxFiles: "7d",
   level: "info",
 
-  format: combine(timestamp({ format: "YYYY-MM-DD HH:mm:ss" }), json()),
+  format: combine(timestamp({ format: "YYYY-MM-DD HH:mm:ss" }), fileFormat),
 });
 
 const logger = createLogger({
@@ -48,7 +56,7 @@ const logger = createLogger({
       level: "debug",
     }),
 
-    dailyRotateFileTransport,
+    dailyTransport,
   ],
 });
 
